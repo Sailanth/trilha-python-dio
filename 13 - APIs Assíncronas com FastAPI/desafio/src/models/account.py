@@ -1,12 +1,26 @@
-import sqlalchemy as sa
-
+import sqlalchemy
 from src.database import metadata
 
-accounts = sa.Table(
+accounts = sqlalchemy.Table(
     "accounts",
     metadata,
-    sa.Column("id", sa.Integer, primary_key=True),
-    sa.Column("user_id", sa.Integer, nullable=False, index=True),
-    sa.Column("balance", sa.Numeric(10, 2), nullable=False, default=0),
-    sa.Column("created_at", sa.TIMESTAMP(timezone=True), default=sa.func.now()),
+    sqlalchemy.Column("id", sqlalchemy.Integer, primary_key=True, autoincrement=True),
+    sqlalchemy.Column(
+        "user_id",
+        sqlalchemy.Integer,
+        sqlalchemy.ForeignKey("users.id"),
+        unique=True,
+        nullable=False,
+    ),
+    sqlalchemy.Column(
+        "balance",
+        sqlalchemy.Numeric(18, 2),
+        nullable=False,
+        server_default="0.00",
+    ),
+    sqlalchemy.Column(
+        "created_at",
+        sqlalchemy.DateTime,
+        server_default=sqlalchemy.func.now(),
+    ),
 )
