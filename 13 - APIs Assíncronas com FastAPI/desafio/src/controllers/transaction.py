@@ -1,15 +1,24 @@
-from fastapi import APIRouter, Depends, status
-
-from src.schemas.transaction import TransactionIn
-from src.security import login_required
-from src.services.transaction import TransactionService
-from src.views.transaction import TransactionOut
-
-router = APIRouter(prefix="/transactions", dependencies=[Depends(login_required)])
-
-service = TransactionService()
+from src.database import database
+from src.models import transactions
 
 
-@router.post("/", status_code=status.HTTP_201_CREATED, response_model=TransactionOut)
-async def create_transaction(transaction: TransactionIn):
-    return await service.create(transaction)
+async def get_transactions_by_account(account_id: int) -> list[dict]:
+    rows = await database.fetch_all(
+        transactions.select()
+        .where(transactions.c.account_id == account_id)
+        .order_by(transactions.c.created_at.desc())
+    )
+    return [dict(r) for r in rows]
+
+
+async def create_transaction(account_id: int, type: str, amount, description: str | None) -> dict:
+    txn_id = await database.execute(
+        transactions.insert().values(
+            account_id=account_id,
+            type=type,
+            amount=amount,
+            description=description,
+        )
+    )
+    row = await database.fetch_one(transactions.select().where(transactions.c.id == txn_id))
+    return dict(row)
