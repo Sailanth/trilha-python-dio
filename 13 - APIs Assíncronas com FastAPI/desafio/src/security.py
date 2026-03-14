@@ -1,90 +1,50 @@
-import time
-from typing import Annotated
-from uuid import uuid4
+from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 import jwt
-from fastapi import Depends, HTTPException, Request, status
-from fastapi.security import HTTPBearer
-from pydantic import BaseModel
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from passlib.context import CryptContext
 
-SECRET = "my-secret"
-ALGORITHM = "HS256"
+from src.config import settings
 
-
-class AccessToken(BaseModel):
-    iss: str
-    sub: int
-    aud: str
-    exp: float
-    iat: float
-    nbf: float
-    jti: str
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 
-class JWTToken(BaseModel):
-    access_token: AccessToken
+def verify_password(plain: str, hashed: str) -> bool:
+    return pwd_context.verify(plain, hashed)
 
 
-def sign_jwt(user_id: int) -> JWTToken:
-    now = time.time()
-    payload = {
-        "iss": "desafio-bank.com.br",
-        "sub": user_id,
-        "aud": "desafio-bank",
-        "exp": now + (60 * 30),  # 30 minutes
-        "iat": now,
-        "nbf": now,
-        "jti": uuid4().hex,
-    }
-    token = jwt.encode(payload, SECRET, algorithm=ALGORITHM)
-    return {"access_token": token}
+def hash_password(plain: str) -> str:
+    return pwd_context.hash(plain)
 
 
-async def decode_jwt(token: str) -> JWTToken | None:
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + (
+        expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
+    to_encode["exp"] = expire
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def decode_token(token: str) -> dict:
     try:
-        decoded_token = jwt.decode(token, SECRET, audience="desafio-bank", algorithms=[ALGORITHM])
-        _token = JWTToken.model_validate({"access_token": decoded_token})
-        return _token if _token.access_token.exp >= time.time() else None
-    except Exception:
-        return None
+        return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token expirado.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
-class JWTBearer(HTTPBearer):
-    def __init__(self, auto_error: bool = True):
-        super(JWTBearer, self).__init__(auto_error=auto_error)
-
-    async def __call__(self, request: Request) -> JWTToken:
-        authorization = request.headers.get("Authorization", "")
-        scheme, _, credentials = authorization.partition(" ")
-
-        if credentials:
-            if not scheme == "Bearer":
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid authentication scheme.",
-                )
-
-            payload = await decode_jwt(credentials)
-            if not payload:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid or expired token.",
-                )
-            return payload
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authorization code.",
-            )
-
-
-async def get_current_user(
-    token: Annotated[JWTToken, Depends(JWTBearer())],
-) -> dict[str, int]:
-    return {"user_id": token.access_token.sub}
-
-
-def login_required(current_user: Annotated[dict[str, int], Depends(get_current_user)]):
-    if not current_user:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    return current_user
+def get_token_payload(token: str = Depends(oauth2_scheme)) -> dict:
+    return decode_token(token)
