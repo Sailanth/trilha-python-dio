@@ -1,18 +1,32 @@
-from databases.interfaces import Record
+from decimal import Decimal
 
 from src.database import database
-from src.models.account import accounts
-from src.schemas.account import AccountIn
+from src.models import accounts
+from src.exceptions import InsufficientBalanceException
 
 
-class AccountService:
-    async def read_all(self, limit: int, skip: int = 0) -> list[Record]:
-        query = accounts.select().limit(limit).offset(skip)
-        return await database.fetch_all(query)
+async def deposit(account_id: int, amount: Decimal) -> Decimal:
+    """Soma o valor ao saldo da conta e retorna o novo saldo."""
+    async with database.transaction():
+        row = await database.fetch_one(accounts.select().where(accounts.c.id == account_id))
+        new_balance = Decimal(str(row["balance"])) + amount
+        await database.execute(
+            accounts.update().where(accounts.c.id == account_id).values(balance=new_balance)
+        )
+    return new_balance
 
-    async def create(self, account: AccountIn) -> Record:
-        command = accounts.insert().values(user_id=account.user_id, balance=account.balance)
-        account_id = await database.execute(command)
 
-        query = accounts.select().where(accounts.c.id == account_id)
-        return await database.fetch_one(query)
+async def withdraw(account_id: int, amount: Decimal) -> Decimal:
+    """Debita o valor do saldo da conta. Levanta exceção se saldo insuficiente."""
+    async with database.transaction():
+        row = await database.fetch_one(accounts.select().where(accounts.c.id == account_id))
+        current_balance = Decimal(str(row["balance"]))
+
+        if current_balance < amount:
+            raise InsufficientBalanceException(balance=f"{current_balance:.2f}")
+
+        new_balance = current_balance - amount
+        await database.execute(
+            accounts.update().where(accounts.c.id == account_id).values(balance=new_balance)
+        )
+    return new_balance
