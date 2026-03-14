@@ -1,21 +1,23 @@
-from enum import Enum
-
-import sqlalchemy as sa
-
+import sqlalchemy
 from src.database import metadata
 
-
-class TransactionType(str, Enum):
-    DEPOSIT = "deposit"
-    WITHDRAWAL = "withdrawal"
-
-
-transactions = sa.Table(
+transactions = sqlalchemy.Table(
     "transactions",
     metadata,
-    sa.Column("id", sa.Integer, primary_key=True),
-    sa.Column("account_id", sa.Integer, sa.ForeignKey("accounts.id"), nullable=False),
-    sa.Column("type", sa.Enum(TransactionType, name="transaction_types"), nullable=False),
-    sa.Column("amount", sa.Numeric(10, 2), nullable=False),
-    sa.Column("timestamp", sa.TIMESTAMP(timezone=True), default=sa.func.now()),
+    sqlalchemy.Column("id", sqlalchemy.Integer, primary_key=True, autoincrement=True),
+    sqlalchemy.Column(
+        "account_id",
+        sqlalchemy.Integer,
+        sqlalchemy.ForeignKey("accounts.id"),
+        nullable=False,
+        index=True,
+    ),
+    sqlalchemy.Column("type", sqlalchemy.String(10), nullable=False),  # "deposito" | "saque"
+    sqlalchemy.Column("amount", sqlalchemy.Numeric(18, 2), nullable=False),
+    sqlalchemy.Column("description", sqlalchemy.String(255), nullable=True),
+    sqlalchemy.Column(
+        "created_at",
+        sqlalchemy.DateTime,
+        server_default=sqlalchemy.func.now(),
+    ),
 )
